@@ -371,6 +371,684 @@ const STAGES = [
 ];
 
 const STEP_LABELS = ['Ficha del proyecto','Etapa de Diseño','Etapa de Producción','Etapa de Consumo','Etapa de Posconsumo','Resultados y reporte'];
+
+/* ============ STATE ============ */
+function createInitialState(){
+  return {
+    ficha:{ nombre:'', equipo:'', categorias:{}, hashtags:[] },
+    selections:{},
+    activeStep:0,
+    view:'global',
+    theme:'light',
+    ui:{ fichaError:null, confirmingReset:false }
+  };
+}
+let state = createInitialState();
+let charts = { main:null, resultRadar:null, bars:{} };
+
+/* ============ SCORING ============ */
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+function findOption(decisionId, optionId){
+  for(const stage of STAGES){
+    const decision = stage.decisions.find(d=>d.id===decisionId);
+    if(decision) return decision.options.find(o=>o.id===optionId) || null;
+  }
+  return null;
+}
+
+function computeAxisValues(s){
+  const raw = AXES.map(()=>0);
+  Object.entries(s.selections).forEach(([decisionId, optionId])=>{
+    const option = findOption(decisionId, optionId);
+    if(!option) return;
+    AXES.forEach((axis,i)=>{
+      const v = option.impact[axis.id];
+      if(v) raw[i]+=v;
+    });
+  });
+  return raw.map(v=>clamp(BASE+v, 0, BASE+RANGE));
+}
+
+function computeStageDelta(s, stageId){
+  const stage = STAGES.find(st=>st.id===stageId);
+  const raw = AXES.map(()=>0);
+  if(!stage) return raw;
+  stage.decisions.forEach(decision=>{
+    const optionId = s.selections[decision.id];
+    if(!optionId) return;
+    const option = decision.options.find(o=>o.id===optionId);
+    if(!option) return;
+    AXES.forEach((axis,i)=>{
+      const v = option.impact[axis.id];
+      if(v) raw[i]+=v;
+    });
+  });
+  return raw;
+}
+
+function computeDimensionDelta(values){
+  const groups={env:[],eco:[],soc:[]};
+  AXES.forEach((axis,i)=>groups[axis.dim].push(values[i]-BASE));
+  const avg=(arr)=>arr.reduce((a,b)=>a+b,0)/arr.length;
+  return { env:avg(groups.env), eco:avg(groups.eco), soc:avg(groups.soc) };
+}
+
+function computeCriticalPoints(){
+  const items=[];
+  STAGES.forEach(stage=>{
+    stage.decisions.forEach(decision=>{
+      const optId = state.selections[decision.id];
+      if(!optId) return;
+      const option = decision.options.find(o=>o.id===optId);
+      const score = Object.values(option.impact||{}).reduce((a,b)=>a+b,0);
+      if(score>0) items.push({ stageLabel: stage.label, decisionLabel: decision.label, optionLabel: option.label, score });
+    });
+  });
+  items.sort((a,b)=>b.score-a.score);
+  return items.slice(0,3);
+}
+
+/* ============ HELPERS ============ */
+function escapeHtml(str){
+  return String(str==null?'':str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+const escapeAttr = escapeHtml;
+
+function axisLabel(id){
+  const axis = AXES.find(a=>a.id===id);
+  return axis ? axis.label : id;
+}
+
+function hexToRgba(hex, alpha){
+  const h = hex.replace('#','');
+  const full = h.length===3 ? h.split('').map(c=>c+c).join('') : h;
+  const bigint = parseInt(full, 16);
+  const r=(bigint>>16)&255, g=(bigint>>8)&255, b=bigint&255;
+  return 'rgba('+r+', '+g+', '+b+', '+alpha+')';
+}
+
+function fichaValid(){
+  const f = state.ficha;
+  return !!(f.nombre && f.nombre.trim() && f.categorias.tipoProducto && f.categorias.escala && f.categorias.mercado);
+}
+
+function stageDecisionsComplete(stage){
+  return stage.decisions.every(d=>state.selections[d.id]);
+}
+
+function stepComplete(index){
+  if(index===0) return fichaValid();
+  if(index>=1 && index<=4) return stageDecisionsComplete(STAGES[index-1]);
+  return false;
+}
+
+function decisionFeedback(option){
+  if(!option) return '';
+  const entries = Object.entries(option.impact||{});
+  if(entries.length===0) return 'Sin variación en los ejes.';
+  const contrae = entries.filter(([,v])=>v<0).map(([k,v])=>axisLabel(k)+' ('+v+')');
+  const expande = entries.filter(([,v])=>v>0).map(([k,v])=>axisLabel(k)+' (+'+v+')');
+  const parts=[];
+  if(contrae.length) parts.push('Contrae: '+contrae.join(', '));
+  if(expande.length) parts.push('Expande: '+expande.join(', '));
+  return parts.join(' · ');
+}
+
+/* ============ CHARTS ============ */
+function chartColors(){
+  const dark = state.theme==='dark';
+  return {
+    gridFaint: dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.16)',
+    gridStrong: dark ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.7)',
+    angle: dark ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.2)',
+    muted: dark ? '#9195a0' : '#c7c9cf',
+    baseLine: dark ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.55)'
+  };
+}
+
+function dimColors(){
+  const cs = getComputedStyle(document.documentElement);
+  return {
+    env: cs.getPropertyValue('--env').trim(),
+    eco: cs.getPropertyValue('--eco').trim(),
+    soc: cs.getPropertyValue('--soc').trim()
+  };
+}
+
+const dimensionSectorsPlugin = {
+  id:'dimensionSectors',
+  beforeDraw(chart){
+    if(chart.config.type!=='radar') return;
+    const r = chart.scales.r;
+    if(!r) return;
+    const ctx = chart.ctx;
+    const cx=r.xCenter, cy=r.yCenter, radius=r.drawingArea;
+    const step=(Math.PI*2)/AXES.length;
+    const start=-Math.PI/2;
+    const dims = dimColors();
+    const groups=[{dim:'env',from:0},{dim:'eco',from:3},{dim:'soc',from:6}];
+    ctx.save();
+    groups.forEach(g=>{
+      const a0=start+(g.from-0.5)*step;
+      const a1=start+(g.from+2.5)*step;
+      ctx.beginPath();
+      ctx.moveTo(cx,cy);
+      ctx.arc(cx,cy,radius,a0,a1);
+      ctx.closePath();
+      ctx.fillStyle=hexToRgba(dims[g.dim],0.06);
+      ctx.fill();
+    });
+    ctx.restore();
+  }
+};
+
+function createRadarChart(canvas){
+  const values = computeAxisValues(state);
+  const colors = chartColors();
+  const dims = dimColors();
+  const pointColors = AXES.map(a=>dims[a.dim]);
+  return new Chart(canvas.getContext('2d'), {
+    type:'radar',
+    data:{
+      labels: AXES.map(a=>a.label),
+      datasets:[
+        { label:'Línea base', data: AXES.map(()=>BASE), borderColor: colors.baseLine, borderDash:[4,4], borderWidth:1.5, pointRadius:0, fill:false, order:2 },
+        { label:'Proyecto', data: values, borderColor:'#ffffff', borderWidth:2, backgroundColor:'rgba(255,255,255,0.12)', pointBackgroundColor: pointColors, pointBorderColor:'#131926', pointBorderWidth:1.5, pointRadius:4, fill:true, order:1 }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      animation:{ duration:400, easing:'easeOutQuart' },
+      scales:{ r:{
+        min:0, max:BASE+RANGE,
+        ticks:{ stepSize:1, display:false, backdropColor:'transparent' },
+        grid:{ circular:false, color:(ctx)=> ctx.tick && ctx.tick.value===BASE ? colors.gridStrong : colors.gridFaint },
+        angleLines:{ display:true, color: colors.angle },
+        pointLabels:{ color:(ctx)=> pointColors[ctx.index], font:{ family:'Bai Jamjuree', size:12, weight:'500' } }
+      }},
+      plugins:{ legend:{ display:false }, tooltip:{ enabled:true } }
+    },
+    plugins:[dimensionSectorsPlugin]
+  });
+}
+
+function createZoomChart(canvas, stageId){
+  const deltas = computeStageDelta(state, stageId);
+  const colors = chartColors();
+  const dims = dimColors();
+  const barColors = AXES.map(a=>dims[a.dim]);
+  return new Chart(canvas.getContext('2d'), {
+    type:'bar',
+    data:{ labels: AXES.map(a=>a.label), datasets:[{ label:'Variación', data: deltas, backgroundColor: barColors, borderWidth:0, borderRadius:2 }] },
+    options:{
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      animation:{ duration:400, easing:'easeOutQuart' },
+      scales:{
+        x:{ min:-8, max:8, ticks:{ color: colors.muted, stepSize:4 }, grid:{ color:(ctx)=> ctx.tick && ctx.tick.value===0 ? colors.gridStrong : colors.gridFaint } },
+        y:{ ticks:{ color:(ctx)=> barColors[ctx.index], font:{ family:'Bai Jamjuree', weight:'500' } }, grid:{ display:false } }
+      },
+      plugins:{ legend:{ display:false } }
+    }
+  });
+}
+
+function destroyCharts(){
+  if(charts.main){ charts.main.destroy(); charts.main=null; }
+  if(charts.resultRadar){ charts.resultRadar.destroy(); charts.resultRadar=null; }
+  Object.keys(charts.bars).forEach(k=>{ if(charts.bars[k]){ charts.bars[k].destroy(); } });
+  charts.bars = {};
+}
+
+function applyThemeToCharts(){
+  const colors = chartColors();
+  const all = [charts.main, charts.resultRadar].concat(Object.values(charts.bars));
+  all.forEach(chart=>{
+    if(!chart) return;
+    if(chart.config.type==='radar'){
+      chart.data.datasets[0].borderColor = colors.baseLine;
+      chart.options.scales.r.grid.color = (ctx)=> ctx.tick && ctx.tick.value===BASE ? colors.gridStrong : colors.gridFaint;
+      chart.options.scales.r.angleLines.color = colors.angle;
+    } else if(chart.config.type==='bar'){
+      chart.options.scales.x.ticks.color = colors.muted;
+      chart.options.scales.x.grid.color = (ctx)=> ctx.tick && ctx.tick.value===0 ? colors.gridStrong : colors.gridFaint;
+    }
+    chart.update();
+  });
+}
+
+/* ============ RENDER ============ */
+function chipGroupHTML(groupId, options, selectedId, ariaLabel){
+  return '<div class="chip-group" role="radiogroup" aria-label="'+escapeAttr(ariaLabel)+'" data-group="'+groupId+'">'
+    + options.map((opt,i)=>{
+        const checked = opt.id===selectedId;
+        const tabIdx = checked ? 0 : (selectedId ? -1 : (i===0 ? 0 : -1));
+        return '<button type="button" class="chip'+(checked?' is-selected':'')+'" role="radio" aria-checked="'+checked+'" tabindex="'+tabIdx+'" data-group="'+groupId+'" data-value="'+opt.id+'">'+escapeHtml(opt.label)+'</button>';
+      }).join('')
+    + '</div>';
+}
+
+function stepperHTML(){
+  return '<ol class="stepper" role="tablist" aria-label="Pasos de la evaluación">'
+    + STEP_LABELS.map((label,i)=>{
+        const complete = stepComplete(i);
+        const active = state.activeStep===i;
+        const status = active ? 'current' : (complete ? 'complete' : 'pending');
+        const statusText = status==='complete' ? 'completo' : (status==='current' ? 'en curso' : 'pendiente');
+        return '<li><button type="button" class="step step--'+status+'" data-step="'+i+'" role="tab" aria-selected="'+active+'" aria-label="Paso '+(i+1)+': '+escapeAttr(label)+' ('+statusText+')">'
+          + '<span class="step-index">'+(complete?'✓':(i+1))+'</span>'
+          + '<span class="step-label">'+escapeHtml(label)+'</span>'
+          + '</button></li>';
+      }).join('')
+    + '</ol>';
+}
+
+function renderHeader(){
+  document.getElementById('stepperWrap').innerHTML = stepperHTML();
+  const toggle = document.getElementById('themeToggle');
+  toggle.setAttribute('aria-pressed', state.theme==='dark');
+  toggle.textContent = state.theme==='dark' ? 'Modo claro' : 'Modo oscuro';
+}
+
+function dimensionIndicatorsHTML(values){
+  const delta = computeDimensionDelta(values);
+  const dims=[['env','Ambiental'],['eco','Económica'],['soc','Social']];
+  return '<div class="dim-indicators" aria-live="polite">'
+    + dims.map(([key,label])=>{
+        const v = delta[key];
+        const rounded = Math.round(v*10)/10;
+        const st = v<-0.05 ? 'contrae' : (v>0.05 ? 'expande' : 'neutro');
+        const sign = v>0 ? '+' : '';
+        return '<div class="dim-indicator dim-indicator--'+key+'">'
+          + '<span class="dim-indicator-label">'+label+'</span>'
+          + '<span class="dim-indicator-value">'+sign+rounded+'</span>'
+          + '<span class="dim-indicator-state">'+st+'</span>'
+          + '</div>';
+      }).join('')
+    + '</div>';
+}
+
+function formFichaHTML(){
+  const f = state.ficha;
+  return '<h2 class="form-title">Ficha del proyecto</h2>'
+    + '<div class="field"><label for="inputNombre">Nombre del proyecto <span class="req">*</span></label>'
+    + '<input type="text" id="inputNombre" value="'+escapeAttr(f.nombre)+'" placeholder="Ej. Abrigo modular Q3"></div>'
+    + '<div class="field"><label for="inputEquipo">Equipo / marca</label>'
+    + '<input type="text" id="inputEquipo" value="'+escapeAttr(f.equipo)+'" placeholder="Ej. Estudio Nación"></div>'
+    + '<div class="field"><span class="field-label">Tipo de producto <span class="req">*</span></span>'
+    + chipGroupHTML('tipoProducto', CATEGORY_OPTIONS.tipoProducto, f.categorias.tipoProducto, 'Tipo de producto') + '</div>'
+    + '<div class="field"><span class="field-label">Escala de producción <span class="req">*</span></span>'
+    + chipGroupHTML('escala', CATEGORY_OPTIONS.escala, f.categorias.escala, 'Escala de producción') + '</div>'
+    + '<div class="field"><span class="field-label">Mercado <span class="req">*</span></span>'
+    + chipGroupHTML('mercado', CATEGORY_OPTIONS.mercado, f.categorias.mercado, 'Mercado') + '</div>'
+    + '<div class="field"><span class="field-label">Palabras clave</span>'
+    + '<div class="hashtag-box" id="hashtagBox">'
+    + f.hashtags.map(tag=>'<span class="hashtag-chip">#'+escapeHtml(tag)+'<button type="button" class="hashtag-remove" data-tag="'+escapeAttr(tag)+'" aria-label="Quitar #'+escapeHtml(tag)+'">×</button></span>').join('')
+    + '<input type="text" id="hashtagInput" placeholder="'+(f.hashtags.length>=8?'Máximo alcanzado':'Escribe y presiona espacio')+'" '+(f.hashtags.length>=8?'disabled':'')+'>'
+    + '</div></div>'
+    + (state.ui.fichaError ? '<p class="form-error" role="alert">'+escapeHtml(state.ui.fichaError)+'</p>' : '');
+}
+
+function formStageHTML(stage){
+  return '<h2 class="form-title">'+escapeHtml(stage.label)+'</h2><div class="decisions">'
+    + stage.decisions.map(decision=>{
+        const selectedId = state.selections[decision.id];
+        const option = decision.options.find(o=>o.id===selectedId);
+        return '<div class="decision"><h3 class="decision-title">'+escapeHtml(decision.label)+'</h3>'
+          + chipGroupHTML(decision.id, decision.options, selectedId, decision.label)
+          + '<p class="decision-feedback" id="feedback-'+decision.id+'" aria-live="polite">'+(selectedId?decisionFeedback(option):'')+'</p>'
+          + '</div>';
+      }).join('')
+    + '</div>';
+}
+
+function formResultsHTML(){
+  const critical = computeCriticalPoints();
+  return '<h2 class="form-title">Resultados y reporte</h2>'
+    + '<p class="form-lead">'+escapeHtml(state.ficha.nombre||'Proyecto sin nombre')+' — evaluación completa de ciclo de vida.</p>'
+    + '<section class="results-block"><h3>Puntos críticos</h3>'
+    + (critical.length
+        ? '<ol class="critical-list">'+critical.map(c=>'<li><span class="critical-stage">'+escapeHtml(c.stageLabel)+'</span><span>'+escapeHtml(c.decisionLabel)+': '+escapeHtml(c.optionLabel)+'</span><span class="critical-score">+'+c.score+'</span></li>').join('')+'</ol>'
+        : '<p class="empty-note">No hay decisiones que expandan el polígono. Buen trabajo.</p>')
+    + '</section>'
+    + '<section class="results-actions">'
+    + '<button type="button" id="btnReport" class="btn btn--primary">Generar reporte PDF</button>'
+    + '<div class="io-row"><button type="button" id="btnExport" class="btn">Exportar JSON</button>'
+    + '<button type="button" id="btnImport" class="btn">Importar JSON</button>'
+    + '<input type="file" id="fileImport" accept="application/json" hidden></div>'
+    + (state.ui.confirmingReset
+        ? '<div class="reset-confirm"><p>¿Seguro que quieres reiniciar? Se perderá todo el progreso.</p><div><button type="button" id="btnResetConfirm" class="btn btn--danger">Sí, reiniciar</button><button type="button" id="btnResetCancel" class="btn">Cancelar</button></div></div>'
+        : '<button type="button" id="btnReset" class="btn btn--danger">Reiniciar</button>')
+    + '</section>';
+}
+
+function navButtonsHTML(){
+  const isFirst = state.activeStep===0;
+  const isLast = state.activeStep>=5;
+  return '<div class="form-nav">'
+    + (!isFirst ? '<button type="button" id="btnPrev" class="btn">Anterior</button>' : '<span></span>')
+    + (!isLast ? '<button type="button" id="btnNext" class="btn btn--primary">Siguiente</button>' : '')
+    + '</div>';
+}
+
+function renderForm(){
+  const panel = document.getElementById('panelForm');
+  let inner;
+  if(state.activeStep===0) inner = formFichaHTML();
+  else if(state.activeStep>=1 && state.activeStep<=4) inner = formStageHTML(STAGES[state.activeStep-1]);
+  else inner = formResultsHTML();
+  panel.innerHTML = '<div class="form-scroll">'+inner+'</div>' + (state.activeStep<=4 ? navButtonsHTML() : '');
+}
+
+function chartPanelEmptyHTML(){
+  return '<div class="empty-state"><h2 class="empty-state-title">Sin forma todavía</h2>'
+    + '<p class="empty-state-copy">La araña aparece cuando empiezas a decidir.</p></div>';
+}
+
+function chartPanelStageHTML(stage){
+  return '<div class="chart-toolbar"><div class="segmented" role="tablist" aria-label="Vista del gráfico">'
+    + '<button type="button" class="seg-btn'+(state.view==='global'?' is-active':'')+'" role="tab" aria-selected="'+(state.view==='global')+'" data-view="global">Araña global</button>'
+    + '<button type="button" class="seg-btn'+(state.view==='zoom'?' is-active':'')+'" role="tab" aria-selected="'+(state.view==='zoom')+'" data-view="zoom">Zoom de etapa</button>'
+    + '</div></div>'
+    + '<div class="chart-canvas-wrap"><canvas id="mainChart" role="img" aria-label="Gráfico de '+(state.view==='global'?'araña global':'zoom de la etapa '+stage.label)+'"></canvas></div>'
+    + dimensionIndicatorsHTML(computeAxisValues(state));
+}
+
+function chartPanelResultsHTML(){
+  const values = computeAxisValues(state);
+  return '<h2 class="panel-title">Araña global</h2>'
+    + '<div class="chart-canvas-wrap chart-canvas-wrap--lg"><canvas id="resultRadar" role="img" aria-label="Gráfico de araña global de resultados"></canvas></div>'
+    + dimensionIndicatorsHTML(values)
+    + '<h3 class="panel-subtitle">Variación por etapa</h3>'
+    + '<div class="stage-grid">'
+    + STAGES.map(st=>'<div class="stage-grid-item"><h4>'+escapeHtml(st.label)+'</h4><div class="chart-canvas-wrap chart-canvas-wrap--sm"><canvas id="bar-'+st.id+'" role="img" aria-label="Barras de variación de la etapa '+escapeHtml(st.label)+'"></canvas></div></div>').join('')
+    + '</div>';
+}
+
+function renderChartPanel(){
+  destroyCharts();
+  const panel = document.getElementById('panelChart');
+  if(state.activeStep===0){
+    panel.innerHTML = chartPanelEmptyHTML();
+    return;
+  }
+  if(state.activeStep>=1 && state.activeStep<=4){
+    const stage = STAGES[state.activeStep-1];
+    panel.innerHTML = chartPanelStageHTML(stage);
+    const canvas = document.getElementById('mainChart');
+    charts.main = state.view==='global' ? createRadarChart(canvas) : createZoomChart(canvas, stage.id);
+    return;
+  }
+  panel.innerHTML = chartPanelResultsHTML();
+  charts.resultRadar = createRadarChart(document.getElementById('resultRadar'));
+  STAGES.forEach(st=>{ charts.bars[st.id] = createZoomChart(document.getElementById('bar-'+st.id), st.id); });
+}
+
+function render(){
+  renderHeader();
+  renderForm();
+  renderChartPanel();
+}
+
+/* ============ EVENTS ============ */
+function normalizeTag(raw){
+  return raw.toLowerCase().replace(/#/g,'').replace(/\s+/g,'');
+}
+
+function commitHashtag(raw){
+  const tag = normalizeTag(raw);
+  if(!tag) return;
+  if(state.ficha.hashtags.length>=8) return;
+  if(state.ficha.hashtags.includes(tag)) return;
+  state.ficha.hashtags.push(tag);
+  render();
+  const input=document.getElementById('hashtagInput');
+  if(input) input.focus();
+}
+
+function removeLastHashtag(){
+  if(state.ficha.hashtags.length===0) return;
+  state.ficha.hashtags.pop();
+  render();
+  const input=document.getElementById('hashtagInput');
+  if(input) input.focus();
+}
+
+function handleRemoveHashtag(tag){
+  state.ficha.hashtags = state.ficha.hashtags.filter(t=>t!==tag);
+  render();
+  const input=document.getElementById('hashtagInput');
+  if(input) input.focus();
+}
+
+function handleChipSelect(chipEl){
+  const group = chipEl.dataset.group;
+  const value = chipEl.dataset.value;
+  if(CATEGORY_GROUPS.includes(group)) state.ficha.categorias[group]=value;
+  else state.selections[group]=value;
+  render();
+  const newChip = document.querySelector('.chip[data-group="'+CSS.escape(group)+'"][data-value="'+CSS.escape(value)+'"]');
+  if(newChip) newChip.focus();
+}
+
+function handleStepClick(index){
+  if(index===state.activeStep) return;
+  if(state.activeStep===0 && index!==0 && !fichaValid()){
+    state.ui.fichaError='Completa el nombre y una opción por categoría antes de continuar.';
+    render();
+    return;
+  }
+  state.ui.fichaError=null;
+  state.activeStep=index;
+  state.view='global';
+  render();
+}
+
+function handleNext(){ handleStepClick(Math.min(5, state.activeStep+1)); }
+function handlePrev(){
+  state.activeStep = Math.max(0, state.activeStep-1);
+  state.view='global';
+  render();
+}
+
+function handleViewChange(view){ state.view=view; render(); }
+
+function handleThemeToggle(){
+  state.theme = state.theme==='dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', state.theme);
+  renderHeader();
+  document.getElementById('themeToggle').focus();
+  applyThemeToCharts();
+}
+
+function handleExport(){
+  const data = { ficha: state.ficha, selections: state.selections, activeStep: state.activeStep, view: state.view, theme: state.theme };
+  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url;
+  const safeName = (state.ficha.nombre||'circularia').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') || 'circularia';
+  a.download = safeName+'.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function handleImportFile(file){
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const data = JSON.parse(reader.result);
+      state.ficha = Object.assign({nombre:'',equipo:'',categorias:{},hashtags:[]}, data.ficha);
+      state.selections = data.selections || {};
+      state.activeStep = typeof data.activeStep==='number' ? data.activeStep : 0;
+      state.view = data.view==='zoom' ? 'zoom' : 'global';
+      if(data.theme==='dark' || data.theme==='light'){
+        state.theme = data.theme;
+        document.documentElement.setAttribute('data-theme', state.theme);
+      }
+      state.ui.fichaError=null;
+      render();
+    }catch(err){
+      state.activeStep=0;
+      state.ui.fichaError='El archivo no es un JSON válido de Circularia.';
+      render();
+    }
+  };
+  reader.readAsText(file);
+}
+
+function handleResetRequest(){ state.ui.confirmingReset=true; render(); }
+function handleResetCancel(){ state.ui.confirmingReset=false; render(); }
+function handleResetConfirm(){
+  const theme = state.theme;
+  state = createInitialState();
+  state.theme = theme;
+  document.documentElement.setAttribute('data-theme', state.theme);
+  render();
+}
+
+function bindEvents(){
+  const appEl = document.getElementById('app');
+
+  appEl.addEventListener('click', (e)=>{
+    const chip = e.target.closest('.chip[role="radio"]');
+    if(chip){ handleChipSelect(chip); return; }
+    const step = e.target.closest('.step[data-step]');
+    if(step){ handleStepClick(Number(step.dataset.step)); return; }
+    const seg = e.target.closest('.seg-btn[data-view]');
+    if(seg){ handleViewChange(seg.dataset.view); return; }
+    if(e.target.closest('#btnNext')){ handleNext(); return; }
+    if(e.target.closest('#btnPrev')){ handlePrev(); return; }
+    const removeTag = e.target.closest('.hashtag-remove');
+    if(removeTag){ handleRemoveHashtag(removeTag.dataset.tag); return; }
+    if(e.target.closest('#btnExport')){ handleExport(); return; }
+    if(e.target.closest('#btnImport')){ document.getElementById('fileImport').click(); return; }
+    if(e.target.closest('#btnReset')){ handleResetRequest(); return; }
+    if(e.target.closest('#btnResetConfirm')){ handleResetConfirm(); return; }
+    if(e.target.closest('#btnResetCancel')){ handleResetCancel(); return; }
+    if(e.target.closest('#btnReport')){ handleGenerateReport(); return; }
+    if(e.target.closest('#themeToggle')){ handleThemeToggle(); return; }
+  });
+
+  appEl.addEventListener('keydown', (e)=>{
+    if(e.target && e.target.id==='hashtagInput'){
+      if(e.key==='Enter' || e.key===',' || e.key===' '){
+        e.preventDefault();
+        commitHashtag(e.target.value);
+        e.target.value='';
+      } else if(e.key==='Backspace' && e.target.value===''){
+        removeLastHashtag();
+      }
+      return;
+    }
+    const chip = e.target.closest ? e.target.closest('.chip[role="radio"]') : null;
+    if(chip && ['ArrowRight','ArrowDown','ArrowLeft','ArrowUp'].includes(e.key)){
+      e.preventDefault();
+      const group = chip.closest('.chip-group');
+      const chips = Array.from(group.querySelectorAll('.chip'));
+      const idx = chips.indexOf(chip);
+      const dir = (e.key==='ArrowRight'||e.key==='ArrowDown') ? 1 : -1;
+      const nextChip = chips[(idx+dir+chips.length)%chips.length];
+      handleChipSelect(nextChip);
+    }
+  });
+
+  appEl.addEventListener('input', (e)=>{
+    if(e.target.id==='inputNombre'){
+      state.ficha.nombre = e.target.value;
+      if(state.ui.fichaError && fichaValid()){
+        state.ui.fichaError=null;
+        const el=document.querySelector('.form-error');
+        if(el) el.remove();
+      }
+      renderHeader();
+      return;
+    }
+    if(e.target.id==='inputEquipo'){ state.ficha.equipo = e.target.value; return; }
+  });
+
+  appEl.addEventListener('change', (e)=>{
+    if(e.target.id==='fileImport'){ handleImportFile(e.target.files[0]); e.target.value=''; }
+  });
+}
+
+/* ============ REPORT ============ */
+function buildReportHTML(radarImg, barImgs){
+  const f = state.ficha;
+  const fecha = new Date().toLocaleDateString('es-CL', { year:'numeric', month:'long', day:'numeric' });
+  const values = computeAxisValues(state);
+  const dimDelta = computeDimensionDelta(values);
+  const critical = computeCriticalPoints();
+  const categoriaLabel = (group,id)=>{
+    const opt = CATEGORY_OPTIONS[group].find(o=>o.id===id);
+    return opt ? opt.label : '—';
+  };
+  const stageRows = STAGES.map(stage=>{
+    const rows = stage.decisions.map(d=>{
+      const optId = state.selections[d.id];
+      const opt = d.options.find(o=>o.id===optId);
+      const impactStr = opt ? (Object.entries(opt.impact||{}).map(([k,v])=>axisLabel(k)+' '+(v>0?'+':'')+v).join(', ') || 'Sin variación') : '—';
+      return '<tr><td>'+escapeHtml(d.label)+'</td><td>'+(opt?escapeHtml(opt.label):'Sin responder')+'</td><td>'+impactStr+'</td></tr>';
+    }).join('');
+    return '<section class="report-section"><h3>'+escapeHtml(stage.label)+'</h3>'
+      + '<table><thead><tr><th>Decisión</th><th>Opción elegida</th><th>Impacto</th></tr></thead><tbody>'+rows+'</tbody></table></section>';
+  }).join('');
+  const barImgsHtml = barImgs.map(b=>'<figure><img src="'+b.src+'" alt="Barras de variación — '+escapeHtml(b.label)+'"><figcaption>'+escapeHtml(b.label)+'</figcaption></figure>').join('');
+  return '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+    + '<title>Reporte Circularia — '+escapeHtml(f.nombre||'Proyecto')+'</title>'
+    + '<style>'
+    + '*{box-sizing:border-box;}body{font-family:Arial,sans-serif;color:#111214;background:#fff;margin:0;padding:24px;}'
+    + 'h1,h2,h3{margin:0 0 8px;}.report-header{border-bottom:2px solid #111214;padding-bottom:16px;margin-bottom:24px;}'
+    + '.report-meta{color:#5b5e66;font-size:13px;}.chip-list{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;}'
+    + '.chip-list span{border:1px solid #111214;padding:3px 8px;font-size:12px;}'
+    + '.hashtags span{color:#5b5e66;font-size:12px;margin-right:6px;}'
+    + '.report-section{margin-bottom:28px;break-inside:avoid;}'
+    + 'table{width:100%;border-collapse:collapse;font-size:13px;}th,td{border:1px solid #d7d5cc;padding:6px 8px;text-align:left;}'
+    + 'figure{display:inline-block;width:48%;margin:0 1% 16px;}figure img{width:100%;}.charts-row{display:flex;flex-wrap:wrap;}'
+    + '.dim-summary{display:flex;gap:16px;margin-bottom:24px;}.dim-summary div{border:1px solid #111214;padding:10px 14px;flex:1;}'
+    + '.critical-list{padding-left:18px;}'
+    + '@media print{@page{size:A4;margin:15mm;}body{padding:0;background:#fff;}.report-section{break-inside:avoid;}}'
+    + '</style></head><body>'
+    + '<header class="report-header"><h1>'+escapeHtml(f.nombre||'Proyecto sin nombre')+'</h1>'
+    + '<p class="report-meta">'+escapeHtml(f.equipo||'—')+' · Reporte generado el '+fecha+'</p>'
+    + '<div class="chip-list"><span>'+escapeHtml(categoriaLabel('tipoProducto', f.categorias.tipoProducto))+'</span>'
+    + '<span>'+escapeHtml(categoriaLabel('escala', f.categorias.escala))+'</span>'
+    + '<span>'+escapeHtml(categoriaLabel('mercado', f.categorias.mercado))+'</span></div>'
+    + '<div class="hashtags">'+f.hashtags.map(t=>'<span>#'+escapeHtml(t)+'</span>').join('')+'</div></header>'
+    + '<section class="report-section"><h2>Araña global</h2><img src="'+radarImg+'" alt="Gráfico de araña global" style="max-width:420px;display:block;"></section>'
+    + '<section class="report-section"><h2>Variación por etapa</h2><div class="charts-row">'+barImgsHtml+'</div></section>'
+    + '<section class="report-section"><h2>Resumen por dimensión</h2><div class="dim-summary">'
+    + '<div><strong>Ambiental</strong><br>'+(dimDelta.env>0?'+':'')+Math.round(dimDelta.env*10)/10+'</div>'
+    + '<div><strong>Económica</strong><br>'+(dimDelta.eco>0?'+':'')+Math.round(dimDelta.eco*10)/10+'</div>'
+    + '<div><strong>Social</strong><br>'+(dimDelta.soc>0?'+':'')+Math.round(dimDelta.soc*10)/10+'</div>'
+    + '</div></section>'
+    + '<section class="report-section"><h2>Puntos críticos</h2>'
+    + (critical.length ? '<ol class="critical-list">'+critical.map(c=>'<li>'+escapeHtml(c.stageLabel)+' — '+escapeHtml(c.decisionLabel)+': '+escapeHtml(c.optionLabel)+' (+'+c.score+')</li>').join('')+'</ol>' : '<p>No hay decisiones que expandan el polígono.</p>')
+    + '</section>'
+    + stageRows
+    + '<script>(function(){var imgs=Array.prototype.slice.call(document.images);var pending=imgs.length;function ready(){pending--;if(pending<=0){window.print();}}if(pending===0){window.print();}imgs.forEach(function(img){if(img.complete){ready();}else{img.addEventListener("load",ready);img.addEventListener("error",ready);}});})();<\/script>'
+    + '</body></html>';
+}
+
+function handleGenerateReport(){
+  if(!charts.resultRadar) return;
+  const radarImg = charts.resultRadar.toBase64Image();
+  const barImgs = STAGES.map(st=>({ label: st.label, src: charts.bars[st.id] ? charts.bars[st.id].toBase64Image() : '' }));
+  const html = buildReportHTML(radarImg, barImgs);
+  const win = window.open('', '_blank');
+  if(!win) return;
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}
+
+/* ============ INIT ============ */
+document.documentElement.setAttribute('data-theme', state.theme);
+bindEvents();
+render();
 </script>
 </body>
 </html>
