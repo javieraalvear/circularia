@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Circularia — Evaluación de sostenibilidad en etapa de diseño</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* ============ TOKENS ============ */
+:root{
+  --env:#a8e63d;
+  --eco:#6b6ef5;
+  --soc:#2de8a8;
+  --chart-bg-dark:#131926;
+
+  --bg:#f2f1ec;
+  --surface:#ffffff;
+  --text:#111214;
+  --text-muted:#5b5e66;
+  --border:#d7d5cc;
+
+  --danger:#c23a3a;
+  --radius:2px;
+}
+html[data-theme="dark"]{
+  --bg:#0d0f14;
+  --surface:#161a22;
+  --text:#f3f4f2;
+  --text-muted:#a1a5af;
+  --border:#2a2f3a;
+}
+
+/* ============ BASE / RESET ============ */
+*,*::before,*::after{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  font-family:'Bai Jamjuree',system-ui,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  font-weight:400;
+  -webkit-font-smoothing:antialiased;
+}
+button,input{font-family:inherit;}
+h1,h2,h3,h4,p,ol,ul{margin:0;}
+button{cursor:pointer;}
+*:focus-visible{outline:2px solid var(--eco);outline-offset:2px;}
+.panel-chart *:focus-visible{outline-color:var(--soc);}
+
+/* ============ LAYOUT ============ */
+#app{display:flex;flex-direction:column;height:100vh;}
+
+.app-header{
+  display:flex;align-items:center;gap:24px;
+  padding:14px 24px;
+  border-bottom:1px solid var(--border);
+  background:var(--surface);
+  flex-shrink:0;
+}
+.logo{
+  font-weight:700;font-size:18px;letter-spacing:0.08em;
+  white-space:nowrap;
+}
+.theme-toggle{
+  margin-left:auto;flex-shrink:0;
+  background:transparent;border:1px solid var(--border);color:var(--text);
+  padding:8px 14px;font-size:13px;font-weight:500;border-radius:var(--radius);
+}
+.theme-toggle:hover{border-color:var(--text);}
+
+.stepper{
+  list-style:none;padding:0;margin:0;
+  display:flex;gap:4px;flex-wrap:wrap;flex:1;min-width:0;
+}
+.step{
+  display:flex;align-items:center;gap:8px;
+  background:transparent;border:1px solid var(--border);color:var(--text-muted);
+  padding:7px 12px;border-radius:var(--radius);font-size:12.5px;font-weight:500;
+  white-space:nowrap;
+}
+.step-index{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:18px;height:18px;border-radius:50%;border:1px solid currentColor;font-size:11px;flex-shrink:0;
+}
+.step--current{color:var(--text);border-color:var(--text);}
+.step--current .step-index{background:var(--text);color:var(--bg);border-color:var(--text);}
+.step--complete{color:var(--eco);border-color:var(--eco);}
+.step--complete .step-index{background:var(--eco);color:#fff;border-color:var(--eco);}
+
+.split{flex:1;display:flex;min-height:0;}
+.panel{overflow-y:auto;}
+.panel-form{
+  flex:1 1 50%;min-width:0;
+  border-right:1px solid var(--border);
+  display:flex;flex-direction:column;
+  background:var(--bg);
+}
+.form-scroll{padding:28px;flex:1;overflow-y:auto;}
+.form-nav{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:16px 28px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0;
+}
+
+.panel-chart{
+  flex:1 1 50%;min-width:0;
+  background:var(--chart-bg-dark);
+  color:#f5f6f4;
+  padding:28px;
+  --pc-muted:#a7abb5;
+  --pc-border:rgba(255,255,255,0.14);
+}
+
+@media (max-width:900px){
+  .split{flex-direction:column;}
+  .panel-form{border-right:none;border-bottom:1px solid var(--border);flex:none;}
+  .panel-chart{flex:none;}
+  .app-header{flex-wrap:wrap;}
+}
+
+/* ============ FORM ELEMENTS ============ */
+.form-title{font-size:22px;font-weight:700;margin-bottom:6px;}
+.form-lead{color:var(--text-muted);font-size:13.5px;margin-bottom:20px;}
+.panel-subtitle{font-size:15px;font-weight:600;margin:24px 0 10px;color:var(--pc-muted);}
+.panel-title{font-size:20px;font-weight:700;margin-bottom:14px;color:#fff;}
+
+.field{margin-bottom:22px;}
+.field label,.field-label{display:block;font-size:13px;font-weight:600;margin-bottom:8px;}
+.req{color:var(--danger);}
+.field input[type="text"]{
+  width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius);
+  background:var(--surface);color:var(--text);font-size:14px;
+}
+.field input[type="text"]:focus-visible{outline-offset:0;}
+
+.chip-group{display:flex;flex-wrap:wrap;gap:8px;}
+.chip{
+  border:1px solid var(--border);background:var(--surface);color:var(--text);
+  padding:7px 13px;font-size:13px;font-weight:500;border-radius:var(--radius);
+}
+.chip:hover{border-color:var(--text);}
+.chip.is-selected{background:var(--text);color:var(--bg);border-color:var(--text);}
+
+.hashtag-box{
+  display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+  border:1px solid var(--border);border-radius:var(--radius);padding:8px;background:var(--surface);
+}
+.hashtag-chip{
+  display:inline-flex;align-items:center;gap:4px;
+  border:1px solid var(--border);border-radius:var(--radius);padding:3px 4px 3px 9px;
+  font-size:12.5px;color:var(--text);
+}
+.hashtag-remove{
+  background:none;border:none;color:var(--text-muted);font-size:14px;line-height:1;padding:2px 5px;
+}
+.hashtag-remove:hover{color:var(--danger);}
+#hashtagInput{
+  border:none;outline:none;background:transparent;color:var(--text);font-size:13px;
+  flex:1;min-width:120px;padding:4px;
+}
+
+.form-error{
+  color:var(--danger);font-size:13px;font-weight:500;
+  border:1px solid var(--danger);border-radius:var(--radius);padding:8px 12px;margin-top:4px;
+}
+
+.decisions{display:flex;flex-direction:column;gap:26px;}
+.decision-title{font-size:15px;font-weight:600;margin-bottom:10px;}
+.decision-feedback{min-height:18px;font-size:12.5px;color:var(--text-muted);margin-top:8px;}
+
+.btn{
+  border:1px solid var(--border);background:var(--surface);color:var(--text);
+  padding:10px 18px;font-size:13.5px;font-weight:500;border-radius:var(--radius);
+}
+.btn:hover{border-color:var(--text);}
+.btn--primary{background:var(--text);color:var(--bg);border-color:var(--text);}
+.btn--danger{color:var(--danger);border-color:var(--danger);}
+.btn--danger:hover{background:var(--danger);color:#fff;}
+
+.results-block{margin-bottom:26px;}
+.results-block h3{font-size:15px;font-weight:600;margin-bottom:10px;}
+.critical-list{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px;}
+.critical-list li{
+  display:flex;flex-direction:column;gap:2px;
+  border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;font-size:13px;
+}
+.critical-stage{font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);}
+.critical-score{font-weight:700;color:var(--danger);}
+.empty-note{color:var(--text-muted);font-size:13px;}
+
+.results-actions{display:flex;flex-direction:column;gap:12px;align-items:flex-start;}
+.io-row{display:flex;gap:10px;}
+.reset-confirm{
+  border:1px solid var(--danger);border-radius:var(--radius);padding:12px;
+  display:flex;flex-direction:column;gap:10px;font-size:13px;
+}
+.reset-confirm p{margin:0;}
+.reset-confirm div{display:flex;gap:8px;}
+
+/* ============ CHART PANEL ============ */
+.empty-state{
+  height:100%;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;
+  max-width:420px;
+}
+.empty-state-title{font-size:32px;font-weight:700;margin-bottom:14px;}
+.empty-state-copy{color:var(--pc-muted);font-size:15px;line-height:1.5;}
+
+.chart-toolbar{margin-bottom:16px;}
+.segmented{display:inline-flex;border:1px solid var(--pc-border);border-radius:var(--radius);overflow:hidden;}
+.seg-btn{
+  background:transparent;border:none;color:var(--pc-muted);padding:8px 16px;font-size:13px;font-weight:500;
+}
+.seg-btn.is-active{background:#fff;color:#111214;}
+.seg-btn + .seg-btn{border-left:1px solid var(--pc-border);}
+
+.chart-canvas-wrap{position:relative;width:100%;height:400px;}
+.chart-canvas-wrap--lg{height:440px;}
+.chart-canvas-wrap--sm{height:210px;}
+
+.dim-indicators{display:flex;gap:14px;margin-top:18px;flex-wrap:wrap;}
+.dim-indicator{
+  flex:1;min-width:130px;border:1px solid var(--pc-border);border-radius:var(--radius);padding:10px 12px;
+}
+.dim-indicator-label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--pc-muted);margin-bottom:4px;}
+.dim-indicator-value{display:block;font-size:18px;font-weight:700;}
+.dim-indicator-state{display:block;font-size:12px;color:var(--pc-muted);text-transform:capitalize;}
+.dim-indicator--env .dim-indicator-value{color:var(--env);}
+.dim-indicator--eco .dim-indicator-value{color:var(--eco);}
+.dim-indicator--soc .dim-indicator-value{color:var(--soc);}
+
+.stage-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-top:12px;}
+.stage-grid-item h4{font-size:13px;font-weight:600;margin-bottom:8px;color:var(--pc-muted);}
+@media (max-width:600px){.stage-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="app-header">
+    <div class="logo">CIRCULARIA</div>
+    <div id="stepperWrap"></div>
+    <button type="button" id="themeToggle" class="theme-toggle" aria-pressed="false">Modo oscuro</button>
+  </header>
+  <main class="split">
+    <section id="panelForm" class="panel panel-form" aria-label="Formulario de evaluación"></section>
+    <section id="panelChart" class="panel panel-chart" aria-label="Visualización de impacto"></section>
+  </main>
+</div>
+
+<script>
+/* ============ DATA ============ */
+const BASE = 5;
+const RANGE = 8;
+
+const AXES = [
+  { id:'materiales', label:'Materiales', dim:'env' },
+  { id:'energia', label:'Energía', dim:'env' },
+  { id:'residuos', label:'Residuos', dim:'env' },
+  { id:'costo', label:'Costo', dim:'eco' },
+  { id:'sobreproduccion', label:'Sobreproducción', dim:'eco' },
+  { id:'vidaUtil', label:'Vida útil comercial', dim:'eco' },
+  { id:'condicionesLaborales', label:'Condiciones laborales', dim:'soc' },
+  { id:'cadenaLocal', label:'Cadena local', dim:'soc' },
+  { id:'accesoUso', label:'Acceso y uso', dim:'soc' }
+];
+
+const CATEGORY_OPTIONS = {
+  tipoProducto: [
+    {id:'vestuario', label:'Vestuario'},
+    {id:'accesorio', label:'Accesorio'},
+    {id:'mobiliario', label:'Mobiliario'},
+    {id:'objeto', label:'Objeto'},
+    {id:'packaging', label:'Packaging'},
+    {id:'editorial', label:'Editorial'}
+  ],
+  escala: [
+    {id:'pieza-unica', label:'Pieza única'},
+    {id:'serie-corta', label:'Serie corta'},
+    {id:'serie-media', label:'Serie media'},
+    {id:'industrial', label:'Industrial'}
+  ],
+  mercado: [
+    {id:'local', label:'Local'},
+    {id:'nacional', label:'Nacional'},
+    {id:'regional-latam', label:'Regional LATAM'},
+    {id:'exportacion', label:'Exportación'}
+  ]
+};
+const CATEGORY_GROUPS = Object.keys(CATEGORY_OPTIONS);
+
+const STAGES = [
+  { id:'diseno', label:'Diseño', decisions:[
+    { id:'material', label:'Material principal', options:[
+      {id:'reciclado', label:'Reciclado o reutilizado', impact:{materiales:-2, residuos:-1}},
+      {id:'monovirgen', label:'Monomaterial virgen certificado', impact:{costo:1}},
+      {id:'mezcla', label:'Mezcla no separable', impact:{materiales:2, residuos:2}}
+    ]},
+    { id:'desmontaje', label:'Diseño para desmontaje', options:[
+      {id:'total', label:'Total', impact:{residuos:-2, materiales:-1}},
+      {id:'parcial', label:'Parcial', impact:{residuos:-1}},
+      {id:'ninguno', label:'Ninguno', impact:{residuos:1, materiales:1}}
+    ]},
+    { id:'componentes', label:'Cantidad de componentes y procesos', options:[
+      {id:'minima', label:'Mínima', impact:{energia:-1, costo:-1, residuos:-1}},
+      {id:'media', label:'Media', impact:{}},
+      {id:'alta', label:'Alta', impact:{energia:2, costo:1, residuos:1}}
+    ]},
+    { id:'modular', label:'Diseño modular o actualizable', options:[
+      {id:'si', label:'Sí', impact:{vidaUtil:-2, residuos:-1, accesoUso:-1}},
+      {id:'parcialMod', label:'Parcial', impact:{vidaUtil:-1}},
+      {id:'no', label:'No', impact:{vidaUtil:1, residuos:1}}
+    ]}
+  ]},
+  { id:'produccion', label:'Producción', decisions:[
+    { id:'modeloProduccion', label:'Modelo de producción', options:[
+      {id:'demanda', label:'Bajo demanda', impact:{sobreproduccion:-2, residuos:-1, costo:1}},
+      {id:'preventa', label:'Preventa', impact:{sobreproduccion:-1}},
+      {id:'stock', label:'Stock por temporada', impact:{sobreproduccion:2, residuos:1}}
+    ]},
+    { id:'proveedores', label:'Proveedores', options:[
+      {id:'localesTraz', label:'Locales con trazabilidad', impact:{cadenaLocal:-2, condicionesLaborales:-1, energia:-1}},
+      {id:'nacionales', label:'Nacionales', impact:{cadenaLocal:-1}},
+      {id:'importados', label:'Importados sin trazabilidad', impact:{cadenaLocal:2, condicionesLaborales:1, energia:1}}
+    ]},
+    { id:'energiaProceso', label:'Energía del proceso', options:[
+      {id:'renovable', label:'Renovable', impact:{energia:-2}},
+      {id:'mixta', label:'Mixta', impact:{}},
+      {id:'fosil', label:'Fósil', impact:{energia:2}}
+    ]},
+    { id:'mermas', label:'Gestión de mermas', options:[
+      {id:'reintegradas', label:'Reintegradas al proceso', impact:{residuos:-2, costo:-1}},
+      {id:'subproducto', label:'Vendidas como subproducto', impact:{residuos:-1}},
+      {id:'descartadas', label:'Descartadas', impact:{residuos:2}}
+    ]}
+  ]},
+  { id:'consumo', label:'Consumo', decisions:[
+    { id:'durabilidad', label:'Durabilidad esperada', options:[
+      {id:'larga', label:'Larga', impact:{vidaUtil:-2, residuos:-1}},
+      {id:'mediaDur', label:'Media', impact:{}},
+      {id:'corta', label:'Corta, tendencia de temporada', impact:{vidaUtil:2, sobreproduccion:1, residuos:1}}
+    ]},
+    { id:'reparabilidad', label:'Reparabilidad', options:[
+      {id:'servicio', label:'Servicio de reparación ofrecido', impact:{vidaUtil:-2, accesoUso:-2, residuos:-1}},
+      {id:'repuestos', label:'Repuestos disponibles', impact:{vidaUtil:-1, accesoUso:-1}},
+      {id:'noReparable', label:'No reparable', impact:{vidaUtil:1, residuos:1, accesoUso:1}}
+    ]},
+    { id:'empaque', label:'Empaque y distribución', options:[
+      {id:'retornable', label:'Sin empaque o retornable', impact:{residuos:-2, materiales:-1, costo:-1}},
+      {id:'reciclable', label:'Reciclable', impact:{residuos:-1}},
+      {id:'unUso', label:'Plástico de un uso', impact:{residuos:2, materiales:1}}
+    ]}
+  ]},
+  { id:'posconsumo', label:'Posconsumo', decisions:[
+    { id:'retorno', label:'Programa de retorno', options:[
+      {id:'takeback', label:'Take-back activo', impact:{residuos:-2, cadenaLocal:-1, accesoUso:-1}},
+      {id:'puntoRecepcion', label:'Punto de recepción', impact:{residuos:-1}},
+      {id:'ningunoRet', label:'Ninguno', impact:{residuos:1}}
+    ]},
+    { id:'inventario', label:'Destino del inventario no vendido', options:[
+      {id:'reventaDonacion', label:'Reventa o donación', impact:{sobreproduccion:-2, costo:-1}},
+      {id:'outlet', label:'Outlet', impact:{sobreproduccion:-1}},
+      {id:'destruccion', label:'Destrucción', impact:{sobreproduccion:2, residuos:1}}
+    ]},
+    { id:'reciclabilidad', label:'Reciclabilidad al fin de vida', options:[
+      {id:'totalRec', label:'Total', impact:{residuos:-2, materiales:-1}},
+      {id:'parcialRec', label:'Parcial', impact:{residuos:-1}},
+      {id:'nula', label:'Nula', impact:{residuos:2, materiales:1}}
+    ]}
+  ]}
+];
+
+const STEP_LABELS = ['Ficha del proyecto','Etapa de Diseño','Etapa de Producción','Etapa de Consumo','Etapa de Posconsumo','Resultados y reporte'];
+</script>
+</body>
+</html>
