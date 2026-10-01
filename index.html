@@ -1030,7 +1030,7 @@ function buildReportHTML(radarImg, barImgs){
     + '</section>'
     + stageRows
     + '<script>(function(){var imgs=Array.prototype.slice.call(document.images);var pending=imgs.length;function ready(){pending--;if(pending<=0){window.print();}}if(pending===0){window.print();}imgs.forEach(function(img){if(img.complete){ready();}else{img.addEventListener("load",ready);img.addEventListener("error",ready);}});})();<\/script>'
-    + '</body></html>';
+    + '<\/body><\/html>';
 }
 
 function handleGenerateReport(){
