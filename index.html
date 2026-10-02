@@ -442,12 +442,6 @@ body{padding:var(--m);}
 #app{height:calc(100vh - 2*var(--m));height:calc(100svh - 2*var(--m));background:var(--bg);}
 .logo{background:none;border:0;color:inherit;padding:0;display:flex;align-items:center;gap:10px;cursor:pointer;}
 .logo svg{width:24px;height:24px;}
-.app-header{--text:#ecebe5;--border:rgba(236,235,229,.4);background:var(--frame);color:#ecebe5;border-bottom:1px solid rgba(236,235,229,.3);}
-.app-header .logo svg{color:#ecebe5;}
-.theme-toggle{border-color:#ecebe5;color:#ecebe5;background:transparent;}
-.step--current{box-shadow:3px 3px 0 #ecebe5;}
-.step:hover{color:#0a0a0a;}
-.app-header{--bg:#0b0b0b;}
 
 /* ----- APP · cabecera y pasos ----- */
 .app-header{background:color-mix(in srgb,var(--surface) 84%,transparent);border-bottom:1px solid var(--text);position:relative;}
@@ -671,9 +665,10 @@ body{font-size:15px;}
   --font:'Helvetica Neue',Helvetica,Arial,sans-serif;
   --paper:#ecebe5;--frame:#0b0b0b;
   --bg:#cfcfca;--surface:#ecebe5;--text:#27282a;--text-muted:#4b4c4e;--border:rgba(39,40,42,.45);
-  --acc:#b9ff00;--env:#b6f000;
+  --acc:#b9ff00;--env:#b9ff00;--eco:#303133;--soc:#a3a39e;--cyan:#d4d4ce;--pink:#b9ff00;--danger:#27282a;
+  --poster-w:min(100%,860px);
 }
-html[data-theme="dark"]{--bg:#1b1c1c;--surface:#2a2b2c;--paper:#2a2b2c;--text:#ecebe5;--text-muted:#a9aaa6;--border:rgba(236,235,229,.4);}
+html[data-theme="dark"]{--eco:#d8d8d2;--soc:#6d6d69;--danger:#ecebe5;--cyan:#3a3b3c;--bg:#1b1c1c;--surface:#2a2b2c;--paper:#2a2b2c;--text:#ecebe5;--text-muted:#a9aaa6;--border:rgba(236,235,229,.4);}
 body{font-family:var(--mono);font-weight:400;}
 button,input,select{font-family:var(--mono);}
 .intro,.sheet{font-family:var(--mono);}
@@ -711,22 +706,6 @@ button,input,select{font-family:var(--mono);}
 
 @media (max-width:900px){#app{height:auto;min-height:calc(100vh - 2*var(--m));}}
 
-/* cabecera negra (marco) */
-.app-header{--text:#ecebe5;--border:rgba(236,235,229,.4);--bg:#0b0b0b;background:var(--frame);color:#ecebe5;border-bottom:1px solid rgba(236,235,229,.3);}
-.app-header .logo,.app-header .logo svg{color:#ecebe5;}
-.theme-toggle{border-color:#ecebe5;color:#ecebe5;background:transparent;}
-.theme-toggle:hover{background:var(--acc);color:#0a0a0a;border-color:var(--acc);}
-.step{color:#ecebe5;border-color:rgba(236,235,229,.45);background:transparent;}
-.step--pending{color:rgba(236,235,229,.8);}
-.step:hover{background:var(--acc);color:#0a0a0a;border-color:var(--acc);}
-.step-index{border-color:currentColor;}
-.step--current{background:var(--acc);color:#0a0a0a;border-color:var(--acc);box-shadow:3px 3px 0 #ecebe5;}
-.step--current .step-index{background:#0a0a0a;color:var(--acc);border-color:#0a0a0a;}
-.step--complete{color:#ecebe5;border-color:#ecebe5;}
-.step--complete .step-index{background:var(--acc);color:#0a0a0a;border-color:var(--acc);}
-.btn--primary{background:var(--text);color:var(--bg);border-color:var(--text);}
-.btn--primary:hover{background:var(--acc);color:#0a0a0a;}
-.btn--danger{background:var(--paper);}
 .chart-toolbar{position:relative;z-index:3;}
 .tech-radar::before{width:90%;}
 .tech-radar::after{left:70%;width:26%;}
@@ -738,6 +717,50 @@ button,input,select{font-family:var(--mono);}
 .stmt{padding:.4em .6em;width:fit-content;}
 .num span{display:inline-block;padding:.2em .5em;}
 .mono-s:not(.hl){background:color-mix(in srgb,var(--paper) 88%,transparent);padding:.15em .5em;}
+
+/* ============ TODA LA HERRAMIENTA · afiche vertical ============ */
+body{padding:clamp(16px,4vw,60px) var(--m);}
+#app{width:var(--poster-w);margin:0 auto;height:auto;min-height:calc(100svh - 2*clamp(16px,4vw,60px));background:var(--bg);position:relative;box-shadow:0 0 0 1px rgba(236,235,229,.12);}
+.split{display:block;flex:none;min-height:0;}
+.panel,.panel-form{overflow:visible;}
+.panel-form{border-right:none;border-bottom:1px solid var(--text);}
+.form-scroll{overflow:visible;padding-right:56px;}
+.panel-chart{min-height:0;border-top:0;}
+.app-header{position:sticky;top:0;z-index:30;--bg:var(--paper);background:color-mix(in srgb,var(--paper) 94%,transparent);color:var(--text);border-bottom:1px solid var(--text);}
+.app-header .logo,.app-header .logo svg{color:var(--text);}
+.sheet{width:var(--poster-w);}
+.form-nav{position:sticky;bottom:0;z-index:6;gap:12px;}
+.nav-delta{display:flex;gap:14px;font:500 12.5px/1 var(--mono);letter-spacing:.04em;color:var(--text);}
+.nav-delta span{display:inline-flex;align-items:center;gap:6px;background:var(--paper);padding:3px 6px;}
+.nav-delta i{width:8px;height:8px;display:inline-block;border:1px solid var(--text);}
+.nav-delta .a i{background:var(--env);}.nav-delta .e i{background:var(--eco);}.nav-delta .s i{background:var(--soc);}
+@media (max-width:520px){.nav-delta{display:none;}.form-scroll{padding-right:44px;}}
+/* textos verticales y rotados */
+.panel-form::after,.panel-chart::after{position:absolute;right:10px;top:70px;writing-mode:vertical-rl;font:500 12.5px/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase;background:var(--acc);color:#0a0a0a;padding:8px 4px;z-index:2;pointer-events:none;}
+.panel-form::after{content:"Evaluación de sostenibilidad / procesos de producción";}
+.panel-chart::after{content:"Araña de impacto / nueve ejes / tres dimensiones";top:auto;bottom:24px;right:10px;}
+.panel-chart > *{position:relative;}
+.panel-chart::before{display:none;}
+.critical-score{background:var(--acc);color:#0a0a0a;padding:0 6px;width:fit-content;}
+.critical-list li{border-left:6px solid var(--acc);}
+.hashtag-chip{background:var(--acc);color:#0a0a0a;}
+.dimcard.eco header{color:#ecebe5;}
+.reset-confirm{background:var(--acc);}
+
+.btn--primary{background:var(--text);color:var(--bg);border-color:var(--text);}
+.btn--primary:hover{background:var(--acc);color:#0a0a0a;box-shadow:4px 4px 0 var(--text);}
+.btn--danger{background:var(--paper);color:var(--text);border-color:var(--text);}
+.btn--danger:hover{background:var(--text);color:var(--paper);}
+.results-block h3,.decision-title{background:var(--paper);display:inline-block;padding:2px 8px;}
+.app-header{flex-wrap:wrap;gap:10px 18px;}
+.app-header .theme-toggle{margin-left:auto;}
+#stepperWrap{order:3;flex:1 1 100%;min-width:0;}
+
+.panel-chart{padding-right:56px;}
+.chart-canvas-wrap:has(.tech-radar){height:clamp(330px,60vw,540px);}
+.tech-radar::before{width:auto;height:150%;aspect-ratio:1;}
+.tech-radar::after{left:auto;right:-4%;top:-12%;width:auto;height:44%;aspect-ratio:1;}
+@media (max-width:640px){.panel-chart{padding-right:44px;}.chart-canvas-wrap:has(.tech-radar){height:auto;aspect-ratio:640/420;}}
 </style>
 </head>
 <body>
@@ -1446,8 +1469,11 @@ function formResultsHTML(){
 function navButtonsHTML(){
   const isFirst = state.activeStep===0;
   const isLast = state.activeStep>=5;
+  const dl = computeDimensionDelta(computeAxisValues(state));
+  const fm = v => { const x=Math.round(v*10)/10; return (x>0?'+':'')+x; };
   return '<div class="form-nav">'
     + (!isFirst ? '<button type="button" id="btnPrev" class="btn">Anterior</button>' : '<span></span>')
+    + '<div class="nav-delta" aria-hidden="true"><span class="a"><i></i>A '+fm(dl.env)+'</span><span class="e"><i></i>E '+fm(dl.eco)+'</span><span class="s"><i></i>S '+fm(dl.soc)+'</span></div>'
     + (!isLast ? '<button type="button" id="btnNext" class="btn btn--primary">Siguiente</button>' : '')
     + '</div>';
 }
@@ -1908,29 +1934,29 @@ render();
   function uri(svg){return 'url("data:image/svg+xml,'+encodeURIComponent(svg)+'")';}
 
   var PRESETS={
-    s1:{W:600,H:840,seed:11,photo:3,map:.22,
+    s1:{W:600,H:840,seed:11,photo:3,map:0,
       blobs:[{c:[315,430],R:280,n:15},{c:[70,95],R:95,n:5},{c:[520,835],R:180,n:7}],
-      words:[{t:'CIRCULARIA',x:78,y:830,s:210,r:-90,op:.85},{t:'ciclo',x:566,y:70,s:84,r:90,op:.7}],
+      words:[{t:'CIRCULARIA',x:78,y:830,s:210,r:-90,op:.85},{t:'ciclo',x:566,y:70,s:84,r:90,op:.7},{t:'cada decisión',x:40,y:60,s:30,r:0,op:.8},{t:'deja una huella',x:360,y:812,s:26,r:0,op:.8},{t:'viento',x:20,y:520,s:24,r:-90,op:.8}],
       neon:[[0,330,28,120],[572,560,28,64],[190,0,120,14],[0,790,70,16]]},
-    s2:{W:600,H:840,seed:23,photo:7,map:.2,
+    s2:{W:600,H:840,seed:23,photo:7,map:0,
       blobs:[{c:[250,520],R:260,n:13},{c:[560,120],R:130,n:6},{c:[30,40],R:80,n:4}],
-      words:[{t:'EJES',x:560,y:830,s:230,r:-90,op:.8}],
+      words:[{t:'EJES',x:560,y:830,s:230,r:-90,op:.8},{t:'antes de fabricarlo',x:30,y:810,s:28,r:0,op:.85},{t:'residuo',x:40,y:300,s:60,r:90,op:.7}],
       neon:[[0,200,22,90],[578,700,22,110],[420,826,120,14]]},
-    s3:{W:600,H:840,seed:37,photo:5,map:.2,
+    s3:{W:600,H:840,seed:37,photo:5,map:0,
       blobs:[{c:[300,400],R:300,n:15},{c:[600,780],R:150,n:6},{c:[0,40],R:100,n:4}],
-      words:[{t:'DIMENSIONES',x:50,y:840,s:112,r:-90,op:.8}],
+      words:[{t:'DIMENSIONES',x:50,y:840,s:112,r:-90,op:.8},{t:'tres miradas',x:300,y:30,s:30,r:0,op:.85},{t:'una sola forma',x:410,y:830,s:26,r:0,op:.8}],
       neon:[[0,640,24,100],[576,200,24,90],[100,0,90,12]]},
-    s4:{W:600,H:840,seed:41,photo:9,map:.2,
+    s4:{W:600,H:840,seed:41,photo:9,map:0,
       blobs:[{c:[290,440],R:290,n:15},{c:[40,800],R:140,n:6},{c:[570,60],R:110,n:5}],
-      words:[{t:'CICLO',x:590,y:420,s:200,r:90,op:.75}],
+      words:[{t:'CICLO',x:590,y:420,s:200,r:90,op:.75},{t:'one can do',x:30,y:810,s:30,r:0,op:.8},{t:'menos expansión',x:20,y:700,s:24,r:-90,op:.8}],
       neon:[[0,160,22,110],[578,640,22,90],[260,826,130,14]]},
-    form:{W:600,H:720,seed:51,photo:2,map:.2,
-      blobs:[{c:[330,380],R:360,n:18},{c:[20,60],R:90,n:4},{c:[590,700],R:100,n:4}],
-      words:[{t:'CIRCULARIA',x:46,y:700,s:130,r:-90,op:.85}],
+    form:{W:600,H:720,seed:51,photo:2,map:0,
+      blobs:[{c:[250,330],R:250,n:12},{c:[470,600],R:230,n:11},{c:[560,60],R:90,n:4},{c:[40,700],R:110,n:5}],
+      words:[{t:'CIRCULARIA',x:46,y:700,s:130,r:-90,op:.85},{t:'when it is raining',x:150,y:30,s:26,r:0,op:.8},{t:'wind',x:540,y:700,s:60,r:-90,op:.75}],
       neon:[[0,200,14,110],[586,520,14,70]]},
-    chart:{W:600,H:720,seed:61,photo:8,map:.26,
+    chart:{W:600,H:720,seed:61,photo:8,map:0,
       blobs:[{c:[560,70],R:120,n:6},{c:[60,690],R:150,n:6}],
-      words:[{t:'ARAÑA',x:580,y:700,s:140,r:-90,op:.8}],
+      words:[{t:'ARAÑA',x:580,y:700,s:140,r:-90,op:.8},{t:'the best thing',x:30,y:40,s:28,r:0,op:.85},{t:'huella',x:20,y:420,s:70,r:90,op:.75}],
       neon:[[0,240,16,120],[584,330,16,70],[120,0,100,12]]}
   };
   window.applyCityMaps=function(){
