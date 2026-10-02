@@ -352,6 +352,9 @@ button{cursor:pointer;}
 }
 
 /* ============ TECH RADAR (evaluación) ============ */
+.chart-hint{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--pc-muted);}
+.chart-hint--foot{margin-top:16px;text-transform:none;letter-spacing:.04em;}
+.chart-toolbar .chart-hint{display:inline-block;padding:9px 0;}
 .tech-radar{width:100%;height:100%;position:relative;}
 .tech-radar svg{width:100%;height:100%;display:block;overflow:visible;}
 .tr-ticks{transform-origin:280px 210px;animation:trSpin 60s linear infinite;}
@@ -1226,7 +1229,11 @@ function renderChartPanel(){
   destroyCharts();
   const panel = document.getElementById('panelChart');
   if(state.activeStep===0){
-    panel.innerHTML = chartPanelEmptyHTML();
+    panel.innerHTML = '<div class="chart-toolbar"><span class="chart-hint">// Araña global · sin datos aún</span></div>'
+      + '<div class="chart-canvas-wrap" id="mainChart"></div>'
+      + dimensionIndicatorsHTML(computeAxisValues(state))
+      + '<p class="chart-hint chart-hint--foot">El polígono se deforma a medida que tomas decisiones.</p>';
+    charts.main = createTechRadar(document.getElementById('mainChart'));
     return;
   }
   if(state.activeStep>=1 && state.activeStep<=4){
