@@ -346,6 +346,21 @@ button{cursor:pointer;}
   .intro-title span,.reveal{opacity:1;transform:none;filter:none;}
   .lg-draw{stroke-dashoffset:0;}
 }
+
+/* ============ TECH RADAR (evaluación) ============ */
+.tech-radar{width:100%;height:100%;position:relative;}
+.tech-radar svg{width:100%;height:100%;display:block;overflow:visible;}
+.tr-ticks{transform-origin:280px 210px;animation:trSpin 60s linear infinite;}
+.tr-dash{transform-origin:280px 210px;animation:trSpin 32s linear infinite reverse;}
+.tr-sweep{transform-origin:280px 210px;animation:trSpin 7s linear infinite;}
+.tr-orbit{transform-origin:280px 210px;animation:trSpin 16s linear infinite;}
+@keyframes trSpin{to{transform:rotate(360deg);}}
+.tr-poly{filter:drop-shadow(0 0 7px rgba(45,232,168,.5));}
+.tr-label{font:500 10.5px 'Bai Jamjuree',system-ui,sans-serif;letter-spacing:.02em;}
+.tr-delta{font:600 10px ui-monospace,Menlo,monospace;}
+.tr-node{cursor:default;transition:r .2s;}
+.tr-node:hover{r:6.5;}
+@media (prefers-reduced-motion:reduce){.tr-ticks,.tr-dash,.tr-sweep,.tr-orbit{animation:none;}}
 </style>
 </head>
 <body>
@@ -753,6 +768,115 @@ function createRadarChart(canvas){
   });
 }
 
+
+/* ===== Araña tecnológica (SVG animado) ===== */
+let techRadarPrev = null;
+function createTechRadar(container){
+  const NS='http://www.w3.org/2000/svg';
+  const CX=280, CY=210, R=118, MAXV=BASE+RANGE;
+  const dims = dimColors();
+  const n = AXES.length;
+  const ang = i => -Math.PI/2 + i*2*Math.PI/n;
+  const rad = v => (v/MAXV)*R;
+  const xy = (i,r) => [CX+r*Math.cos(ang(i)), CY+r*Math.sin(ang(i))];
+  const ptsOf = vals => vals.map((v,i)=>xy(i,rad(v)).map(c=>c.toFixed(1)).join(',')).join(' ');
+  const target = computeAxisValues(state);
+  const from = techRadarPrev && techRadarPrev.length===n ? techRadarPrev.slice() : AXES.map(()=>BASE);
+
+  let svg = '<defs><linearGradient id="trGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="'+dims.env+'"/><stop offset=".5" stop-color="'+dims.soc+'"/><stop offset="1" stop-color="'+dims.eco+'"/></linearGradient>'
+    + '<radialGradient id="trFill"><stop offset="0" stop-color="'+dims.soc+'" stop-opacity=".05"/><stop offset="1" stop-color="'+dims.soc+'" stop-opacity=".28"/></radialGradient>'
+    + '<linearGradient id="trSweepG" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="'+dims.env+'" stop-opacity="0"/><stop offset="1" stop-color="'+dims.env+'" stop-opacity=".22"/></linearGradient></defs>';
+
+  /* sectores por dimensión */
+  [['env',0],['eco',3],['soc',6]].forEach(([d,f])=>{
+    const a0=ang(f)-Math.PI/n, a1=ang(f+2)+Math.PI/n, r=R+4;
+    svg += '<path d="M'+CX+','+CY+' L'+(CX+r*Math.cos(a0)).toFixed(1)+','+(CY+r*Math.sin(a0)).toFixed(1)+' A'+r+','+r+' 0 0 1 '+(CX+r*Math.cos(a1)).toFixed(1)+','+(CY+r*Math.sin(a1)).toFixed(1)+' Z" fill="'+dims[d]+'" opacity=".07"/>';
+    const b0=a0+0.04, b1=a1-0.04, rr=R+10;
+    svg += '<path d="M'+(CX+rr*Math.cos(b0)).toFixed(1)+','+(CY+rr*Math.sin(b0)).toFixed(1)+' A'+rr+','+rr+' 0 0 1 '+(CX+rr*Math.cos(b1)).toFixed(1)+','+(CY+rr*Math.sin(b1)).toFixed(1)+'" fill="none" stroke="'+dims[d]+'" stroke-width="2.2" stroke-linecap="round" opacity=".9"/>';
+  });
+
+  /* marcas giratorias */
+  let ticks='';
+  for(let t=0;t<90;t++){ const a=t*4*Math.PI/180, r1=R+22, r2=t%5===0?R+17:R+19.5;
+    ticks+='<line x1="'+(CX+r1*Math.cos(a)).toFixed(1)+'" y1="'+(CY+r1*Math.sin(a)).toFixed(1)+'" x2="'+(CX+r2*Math.cos(a)).toFixed(1)+'" y2="'+(CY+r2*Math.sin(a)).toFixed(1)+'" stroke="rgba(255,255,255,.22)" stroke-width=".6"/>'; }
+  svg += '<g class="tr-ticks">'+ticks+'</g>';
+
+  /* anillos y radios */
+  for(let v=2; v<=MAXV; v+=2){
+    svg += '<polygon points="'+ptsOf(AXES.map(()=>v))+'" fill="none" stroke="rgba(255,255,255,'+(v===MAXV?.2:.07)+')" stroke-width=".7"/>';
+  }
+  AXES.forEach((a,i)=>{ const p=xy(i,R); svg+='<line x1="'+CX+'" y1="'+CY+'" x2="'+p[0].toFixed(1)+'" y2="'+p[1].toFixed(1)+'" stroke="rgba(255,255,255,.12)" stroke-width=".6"/>'; });
+  svg += '<polygon points="'+ptsOf(AXES.map(()=>BASE))+'" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1" stroke-dasharray="4 4"/>';
+  svg += '<g class="tr-dash"><circle cx="'+CX+'" cy="'+CY+'" r="'+(R+30)+'" fill="none" stroke="url(#trGrad)" stroke-width="1" stroke-dasharray="90 30 6 30" opacity=".55"/></g>';
+  svg += '<g class="tr-sweep"><path d="M'+CX+','+CY+' L'+(CX+R)+','+CY+' A'+R+','+R+' 0 0 0 '+(CX+R*Math.cos(-0.7)).toFixed(1)+','+(CY+R*Math.sin(-0.7)).toFixed(1)+' Z" fill="url(#trSweepG)"/><line x1="'+CX+'" y1="'+CY+'" x2="'+(CX+R)+'" y2="'+CY+'" stroke="'+dims.env+'" stroke-width=".8" opacity=".5"/></g>';
+  svg += '<g class="tr-orbit"><circle cx="'+CX+'" cy="'+(CY-R-30)+'" r="2.4" fill="#fff"/></g>';
+
+  /* polígono + nodos */
+  svg += '<polygon class="tr-poly" id="trPoly" points="'+ptsOf(from)+'" fill="url(#trFill)" stroke="url(#trGrad)" stroke-width="2" stroke-linejoin="round"/>';
+  AXES.forEach((a,i)=>{
+    const p=xy(i,rad(from[i]));
+    svg += '<circle class="tr-node" id="trNode'+i+'" cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="4.2" fill="'+dims[a.dim]+'" stroke="#131926" stroke-width="1.5"><title>'+escapeHtml(a.label)+': '+target[i]+' (base '+BASE+')</title></circle>';
+  });
+  svg += '<circle cx="'+CX+'" cy="'+CY+'" r="2.4" fill="#fff"/>';
+
+  /* etiquetas y deltas */
+  AXES.forEach((a,i)=>{
+    const c=Math.cos(ang(i)), sn=Math.sin(ang(i));
+    const lx=CX+(R+36)*c, ly=CY+(R+36)*sn+4;
+    const anchor = Math.abs(c)<0.25 ? 'middle' : (c>0?'start':'end');
+    svg += '<text class="tr-label" x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="'+anchor+'" fill="'+dims[a.dim]+'">'+escapeHtml(a.label)+'</text>';
+    const d=target[i]-BASE;
+    if(d!==0) svg += '<text class="tr-delta" x="'+lx.toFixed(1)+'" y="'+(ly+12).toFixed(1)+'" text-anchor="'+anchor+'" fill="'+(d>0?'#ff7a6b':'rgba(255,255,255,.7)')+'">'+(d>0?'+':'')+d+'</text>';
+  });
+
+  container.innerHTML = '<div class="tech-radar"><svg viewBox="0 0 560 420" xmlns="'+NS+'" role="img" aria-label="Araña de impacto: '+AXES.map((a,i)=>a.label+' '+target[i]).join(', ')+'" preserveAspectRatio="xMidYMid meet">'+svg+'</svg></div>';
+
+  /* animación hacia los valores actuales */
+  const poly = container.querySelector('#trPoly');
+  const nodes = AXES.map((a,i)=>container.querySelector('#trNode'+i));
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const dur = reduce ? 0 : 650;
+  let raf=null, t0=null, alive=true;
+  const ease = t => 1-Math.pow(1-t,3);
+  const cur = from.slice();
+  function apply(){
+    poly.setAttribute('points', ptsOf(cur));
+    cur.forEach((v,i)=>{ const p=xy(i,rad(v)); nodes[i].setAttribute('cx',p[0].toFixed(1)); nodes[i].setAttribute('cy',p[1].toFixed(1)); });
+  }
+  function step(ts){
+    if(!alive) return;
+    if(t0===null) t0=ts;
+    const k = dur? Math.min(1,(ts-t0)/dur) : 1, e=ease(k);
+    for(let i=0;i<n;i++) cur[i] = from[i]+(target[i]-from[i])*e;
+    apply();
+    if(k<1) raf=requestAnimationFrame(step); else techRadarPrev = target.slice();
+  }
+  raf=requestAnimationFrame(step);
+
+  return {
+    config:{ type:'techradar' },
+    update(){},
+    destroy(){ alive=false; if(raf) cancelAnimationFrame(raf); techRadarPrev = target.slice(); }
+  };
+}
+
+/* Imagen estática (Chart.js fuera de pantalla) para el reporte PDF */
+function radarImageForReport(){
+  const holder = document.createElement('div');
+  holder.style.cssText = 'position:fixed;left:-9999px;top:0;width:640px;height:520px;';
+  const canvas = document.createElement('canvas');
+  holder.appendChild(canvas);
+  document.body.appendChild(holder);
+  let src = '';
+  try{
+    const chart = createRadarChart(canvas);
+    chart.stop(); chart.update('none');
+    src = chart.toBase64Image();
+    chart.destroy();
+  } finally { holder.remove(); }
+  return src;
+}
+
 function createZoomChart(canvas, stageId){
   const deltas = computeStageDelta(state, stageId);
   const colors = chartColors();
@@ -784,7 +908,7 @@ function applyThemeToCharts(){
   const colors = chartColors();
   const all = [charts.main, charts.resultRadar].concat(Object.values(charts.bars));
   all.forEach(chart=>{
-    if(!chart) return;
+    if(!chart || chart.config.type==='techradar') return;
     if(chart.config.type==='radar'){
       chart.data.datasets[0].borderColor = colors.baseLine;
       chart.options.scales.r.grid.color = (ctx)=> ctx.tick && ctx.tick.value===BASE ? colors.gridStrong : colors.gridFaint;
@@ -930,14 +1054,16 @@ function chartPanelStageHTML(stage){
     + '<button type="button" class="seg-btn'+(state.view==='global'?' is-active':'')+'" role="tab" aria-selected="'+(state.view==='global')+'" data-view="global">Araña global</button>'
     + '<button type="button" class="seg-btn'+(state.view==='zoom'?' is-active':'')+'" role="tab" aria-selected="'+(state.view==='zoom')+'" data-view="zoom">Zoom de etapa</button>'
     + '</div></div>'
-    + '<div class="chart-canvas-wrap"><canvas id="mainChart" role="img" aria-label="Gráfico de '+(state.view==='global'?'araña global':'zoom de la etapa '+stage.label)+'"></canvas></div>'
+    + (state.view==='global'
+        ? '<div class="chart-canvas-wrap" id="mainChart"></div>'
+        : '<div class="chart-canvas-wrap"><canvas id="mainChart" role="img" aria-label="Gráfico de zoom de la etapa '+stage.label+'"></canvas></div>')
     + dimensionIndicatorsHTML(computeAxisValues(state));
 }
 
 function chartPanelResultsHTML(){
   const values = computeAxisValues(state);
   return '<h2 class="panel-title">Araña global</h2>'
-    + '<div class="chart-canvas-wrap chart-canvas-wrap--lg"><canvas id="resultRadar" role="img" aria-label="Gráfico de araña global de resultados"></canvas></div>'
+    + '<div class="chart-canvas-wrap chart-canvas-wrap--lg" id="resultRadar"></div>'
     + dimensionIndicatorsHTML(values)
     + '<h3 class="panel-subtitle">Variación por etapa</h3>'
     + '<div class="stage-grid">'
@@ -956,11 +1082,11 @@ function renderChartPanel(){
     const stage = STAGES[state.activeStep-1];
     panel.innerHTML = chartPanelStageHTML(stage);
     const canvas = document.getElementById('mainChart');
-    charts.main = state.view==='global' ? createRadarChart(canvas) : createZoomChart(canvas, stage.id);
+    charts.main = state.view==='global' ? createTechRadar(canvas) : createZoomChart(canvas, stage.id);
     return;
   }
   panel.innerHTML = chartPanelResultsHTML();
-  charts.resultRadar = createRadarChart(document.getElementById('resultRadar'));
+  charts.resultRadar = createTechRadar(document.getElementById('resultRadar'));
   STAGES.forEach(st=>{ charts.bars[st.id] = createZoomChart(document.getElementById('bar-'+st.id), st.id); });
 }
 
@@ -1085,6 +1211,7 @@ function handleResetCancel(){ state.ui.confirmingReset=false; render(); }
 function handleResetConfirm(){
   const theme = state.theme;
   state = createInitialState();
+  techRadarPrev = null;
   state.theme = theme;
   document.documentElement.setAttribute('data-theme', state.theme);
   render();
@@ -1215,7 +1342,7 @@ function buildReportHTML(radarImg, barImgs){
 
 function handleGenerateReport(){
   if(!charts.resultRadar) return;
-  const radarImg = charts.resultRadar.toBase64Image();
+  const radarImg = radarImageForReport();
   const barImgs = STAGES.map(st=>({ label: st.label, src: charts.bars[st.id] ? charts.bars[st.id].toBase64Image() : '' }));
   const html = buildReportHTML(radarImg, barImgs);
   const win = window.open('', '_blank');
